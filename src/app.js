@@ -55,6 +55,16 @@ app.use(fileUpload({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 }));
 
+
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Property Saif Backend is Running 🚀",
+  });
+});
+
+
 // Routes
 app.use('/api', routes);
 app.use('/uploads', express.static('uploads'));
