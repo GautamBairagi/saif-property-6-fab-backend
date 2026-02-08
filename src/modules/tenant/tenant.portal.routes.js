@@ -19,6 +19,7 @@ router.use(authorize("TENANT"));
 
 router.get("/dashboard", tenantPortalController.getDashboard);
 router.get("/lease", tenantLeaseController.getLeaseDetails);
+router.get("/profile", tenantPortalController.getProfile);
 router.get("/documents", tenantDocumentController.getDocuments);
 router.get("/documents/:id", tenantDocumentController.getDocumentById);
 router.get("/documents/:id/download", tenantDocumentController.downloadDocument);

@@ -26,6 +26,7 @@ exports.getInvoices = async (req, res) => {
             else if (s === 'overdue') statusDisplay = 'Overdue';
             else if (s === 'sent') statusDisplay = 'Due';
             else if (s === 'unpaid') statusDisplay = 'Due';
+            else if (s === 'partial') statusDisplay = 'Partial';
             else statusDisplay = s.charAt(0).toUpperCase() + s.slice(1);
 
             return {
@@ -33,6 +34,7 @@ exports.getInvoices = async (req, res) => {
                 dbId: inv.id,
                 month: inv.month,
                 amount: parseFloat(inv.amount),
+                balanceDue: parseFloat(inv.balanceDue || inv.amount),
                 rent: parseFloat(inv.rent),
                 serviceFees: parseFloat(inv.serviceFees),
                 status: statusDisplay,

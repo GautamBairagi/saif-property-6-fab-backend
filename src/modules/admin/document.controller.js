@@ -2,6 +2,9 @@ const prisma = require('../../config/prisma');
 const path = require('path');
 const documentService = require('../../services/documentService');
 const fs = require('fs');
+const { uploadToCloudinary } = require('../../config/cloudinary');
+const axios = require('axios');
+
 
 // GET /api/admin/documents
 exports.getAllDocuments = async (req, res) => {
@@ -26,7 +29,7 @@ exports.getAllDocuments = async (req, res) => {
     }
 };
 
-const https = require('https');
+
 
 // GET /api/admin/documents/:id/download
 exports.downloadDocument = async (req, res) => {
@@ -42,25 +45,27 @@ exports.downloadDocument = async (req, res) => {
 
         const fileName = doc.name || `document-${id}.pdf`;
 
-        // Handle Cloudinary URLs (Absolute) - Proxy via HTTPS
+        // Handle Cloudinary URLs (Absolute) - Proxy via Axios Stream
         if (doc.fileUrl.startsWith('http')) {
-            return https.get(doc.fileUrl, (proxyRes) => {
-                if (proxyRes.statusCode !== 200) {
-                    return res.status(proxyRes.statusCode).json({ message: 'Failed to fetch file from storage' });
-                }
+            try {
+                const response = await axios({
+                    method: 'GET',
+                    url: doc.fileUrl,
+                    responseType: 'stream'
+                });
 
-                // Set headers for inline preview (or download if disposition=attachment)
                 const disposition = req.query.disposition || 'inline';
-                res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'application/pdf');
+                res.setHeader('Content-Type', response.headers['content-type'] || 'application/pdf');
                 res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`);
 
-                // Pipe the response
-                proxyRes.pipe(res);
-            }).on('error', (err) => {
-                console.error('Proxy error:', err);
-                res.status(500).json({ message: 'Error streaming file' });
-            });
+                response.data.pipe(res);
+                return;
+            } catch (proxyErr) {
+                console.error('Cloudinary Proxy error:', proxyErr);
+                return res.status(500).json({ message: 'Error streaming file from storage' });
+            }
         }
+
 
         // Handle Local Files (Relative)
         const absolutePath = path.resolve(process.cwd(), doc.fileUrl.startsWith('/') ? doc.fileUrl.substring(1) : doc.fileUrl);
@@ -102,16 +107,20 @@ exports.uploadDocument = async (req, res) => {
             return res.status(400).json({ message: 'Document type is required.' });
         }
 
-        // Save file locally (Simple mock for now, ideally Cloudinary/S3)
-        const uploadPath = path.join(process.cwd(), 'uploads', `${Date.now()}-${file.name}`);
-
-        // Ensure uploads directory exists
-        const dir = path.dirname(uploadPath);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
+        // Upload to Cloudinary instead of local disk
+        let fileUrl = '';
+        if (file.tempFilePath) {
+            const result = await uploadToCloudinary(file.tempFilePath, 'admin_documents');
+            fileUrl = result.secure_url;
+        } else {
+            // Fallback for environments where tempFilePath isn't available
+            const uploadPath = path.join(process.cwd(), 'uploads', `${Date.now()}-${file.name}`);
+            const dir = path.dirname(uploadPath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            await file.mv(uploadPath);
+            fileUrl = `/uploads/${path.basename(uploadPath)}`;
         }
 
-        await file.mv(uploadPath);
 
         // Normalize links
         let parsedLinks = [];
@@ -147,7 +156,8 @@ exports.uploadDocument = async (req, res) => {
         const doc = await documentService.linkDocument({
             name: name || file.name,
             type,
-            fileUrl: `/uploads/${path.basename(uploadPath)}`,
+            fileUrl: fileUrl,
+
             links: parsedLinks,
             expiryDate,
             ...legacyFields

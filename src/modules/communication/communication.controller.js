@@ -106,6 +106,7 @@ exports.sendMessage = async (req, res) => {
 exports.getHistory = async (req, res) => {
     try {
         const currentUserId = req.user.id;
+        const userRole = req.user.role;
         const rawId = req.params.userId;
         const otherUserId = typeof rawId === 'string' && rawId.startsWith('resident_')
             ? parseInt(rawId.replace('resident_', ''))
@@ -115,13 +116,25 @@ exports.getHistory = async (req, res) => {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
-        const messages = await prisma.message.findMany({
-            where: {
+        // Shared Inbox Logic for Admins:
+        // Admins see all messages between the target user and ANY admin.
+        // Residents/Tenants only see messages between them and admins.
+        const whereClause = userRole === 'ADMIN'
+            ? {
+                OR: [
+                    { senderId: otherUserId, receiver: { role: 'ADMIN' } },
+                    { sender: { role: 'ADMIN' }, receiverId: otherUserId }
+                ]
+            }
+            : {
                 OR: [
                     { senderId: currentUserId, receiverId: otherUserId },
                     { senderId: otherUserId, receiverId: currentUserId }
                 ]
-            },
+            };
+
+        const messages = await prisma.message.findMany({
+            where: whereClause,
             orderBy: {
                 createdAt: 'asc'
             },
@@ -138,6 +151,7 @@ exports.getHistory = async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch history' });
     }
 };
+
 
 // Get list of conversations (Recent chats + All users depending on role)
 exports.getConversations = async (req, res) => {
@@ -208,18 +222,21 @@ exports.getConversations = async (req, res) => {
                     ? parseInt(recipient.id.replace('resident_', ''))
                     : recipient.id;
 
+                // For Admins, count unread messages from this user to ANY admin
                 const unreadCount = await prisma.message.count({
                     where: {
                         senderId: targetNumericId,
-                        receiverId: userId,
+                        receiver: { role: 'ADMIN' },
                         isRead: false
                     }
                 });
+
+                // Find the last message exchanged between this user and ANY admin
                 const lastMessage = await prisma.message.findFirst({
                     where: {
                         OR: [
-                            { senderId: targetNumericId, receiverId: userId },
-                            { senderId: userId, receiverId: targetNumericId }
+                            { senderId: targetNumericId, receiver: { role: 'ADMIN' } },
+                            { sender: { role: 'ADMIN' }, receiverId: targetNumericId }
                         ]
                     },
                     orderBy: { createdAt: 'desc' }
@@ -228,6 +245,7 @@ exports.getConversations = async (req, res) => {
             }));
 
             res.json(recipientsWithMetadata);
+
 
         } else {
             // Find Admins to chat with
@@ -248,14 +266,24 @@ exports.getConversations = async (req, res) => {
 exports.markAsRead = async (req, res) => {
     try {
         const userId = req.user.id;
+        const userRole = req.user.role;
         const senderId = parseInt(req.body.senderId); // The person whose messages I am reading
 
-        await prisma.message.updateMany({
-            where: {
-                senderId: senderId, // Message came FROM this person
-                receiverId: userId,  // To ME
+        // If Admin, mark all messages from this person to ANY admin as read
+        const updateWhere = userRole === 'ADMIN'
+            ? {
+                senderId: senderId,
+                receiver: { role: 'ADMIN' },
                 isRead: false
-            },
+            }
+            : {
+                senderId: senderId,
+                receiverId: userId,
+                isRead: false
+            };
+
+        await prisma.message.updateMany({
+            where: updateWhere,
             data: { isRead: true }
         });
 
@@ -265,3 +293,4 @@ exports.markAsRead = async (req, res) => {
         res.status(500).json({ error: 'Failed to mark messages as read' });
     }
 };
+

@@ -79,8 +79,8 @@ exports.getLeaseHistory = async (req, res) => {
                 tenant: allTenants, // Show all occupants
                 primaryTenantName: primaryName,
                 coTenants: residentNames,
-                tenantFirstName: l.tenant.firstName,
-                tenantLastName: l.tenant.lastName,
+                tenantFirstName: l.tenant.firstName || (l.tenant.name ? l.tenant.name.split(' ')[0] : ''),
+                tenantLastName: l.tenant.lastName || (l.tenant.name ? l.tenant.name.split(' ').slice(1).join(' ') : ''),
                 term: l.startDate && l.endDate
                     ? `${l.startDate.toISOString().substring(0, 10)} to ${l.endDate.toISOString().substring(0, 10)}`
                     : 'Dates Pending',
@@ -396,9 +396,46 @@ exports.activateLease = catchAsync(async (req, res, next) => {
                     amount: rentAmt,
                     balanceDue: rentAmt,
                     status: 'sent',
-                    dueDate: startDate
+                    dueDate: new Date(startDate.getTime() + 5 * 24 * 60 * 60 * 1000)
                 }
             });
+        }
+
+        // --- DEPOSIT INVOICE LOGIC ---
+        const depositAmt = parseFloat(lease.securityDeposit) || 0;
+        if (depositAmt > 0) {
+            // Check if deposit invoice already exists for this lease
+            const existingDepositInvoice = await tx.invoice.findFirst({
+                where: {
+                    leaseId: lease.id,
+                    category: 'SERVICE',
+                    description: 'Security Deposit'
+                }
+            });
+
+            if (!existingDepositInvoice) {
+                const count = await tx.invoice.count();
+                const invoiceNo = `INV-DEP-${String(count + 1).padStart(5, '0')}`;
+
+                await tx.invoice.create({
+                    data: {
+                        invoiceNo,
+                        tenantId: tId,
+                        unitId: uId,
+                        leaseId: lease.id,
+                        leaseType: lease.unit.rentalMode,
+                        month: monthStr,
+                        rent: 0,
+                        serviceFees: depositAmt,
+                        amount: depositAmt,
+                        balanceDue: depositAmt,
+                        status: 'sent',
+                        category: 'SERVICE',
+                        description: 'Security Deposit',
+                        dueDate: startDate
+                    }
+                });
+            }
         }
 
         return updatedLease;
@@ -712,6 +749,43 @@ exports.createLease = catchAsync(async (req, res, next) => {
                     dueDate: new Date(startDate)
                 }
             });
+        }
+
+        // --- DEPOSIT INVOICE LOGIC ---
+        const depositAmt = parseFloat(securityDeposit) || 0;
+        if (depositAmt > 0) {
+            // Check if deposit invoice already exists for this lease
+            const existingDepositInvoice = await tx.invoice.findFirst({
+                where: {
+                    leaseId: lease.id,
+                    category: 'SERVICE',
+                    description: 'Security Deposit'
+                }
+            });
+
+            if (!existingDepositInvoice) {
+                const count = await tx.invoice.count();
+                const invoiceNo = `INV-DEP-${String(count + 1).padStart(5, '0')}`;
+
+                await tx.invoice.create({
+                    data: {
+                        invoiceNo,
+                        tenantId: billableTenantId,
+                        unitId: uId,
+                        leaseId: lease.id,
+                        leaseType: isFullUnitLease ? 'FULL_UNIT' : 'BEDROOM_WISE',
+                        month: monthStr,
+                        rent: 0,
+                        serviceFees: depositAmt,
+                        amount: depositAmt,
+                        balanceDue: depositAmt,
+                        status: 'sent',
+                        category: 'SERVICE',
+                        description: 'Security Deposit',
+                        dueDate: new Date(startDate)
+                    }
+                });
+            }
         }
 
         // 4. Link Co-Tenants (Residents)

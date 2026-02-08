@@ -13,6 +13,9 @@ router.get('/dashboard/stats', ownerController.getOwnerDashboardStats);
 router.get('/dashboard/financial-pulse', ownerController.getOwnerFinancialPulse);
 router.get('/properties', ownerController.getOwnerProperties);
 router.get('/financials', ownerController.getOwnerFinancials);
+router.get('/invoices/:id/download', ownerController.downloadInvoice);
+router.get('/profile', ownerController.getOwnerProfile);
 router.get('/reports', ownerController.getOwnerReports);
+router.get('/reports/:type/download', ownerController.downloadReport);
 
 module.exports = router;

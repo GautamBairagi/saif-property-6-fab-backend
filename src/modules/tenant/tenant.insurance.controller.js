@@ -34,6 +34,8 @@ exports.getInsurance = async (req, res) => {
             startDate: insurance.startDate.toISOString().substring(0, 10),
             endDate: insurance.endDate.toISOString().substring(0, 10),
             documentUrl: insurance.documentUrl,
+            uploadedDocumentId: insurance.uploadedDocumentId,
+            documentType: insurance.document?.type || 'Other',
             status: insurance.status,
             expiryLabel: getExpiryLabel(insurance.endDate)
         });

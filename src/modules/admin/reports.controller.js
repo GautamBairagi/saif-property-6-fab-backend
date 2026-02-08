@@ -18,9 +18,10 @@ exports.getReports = async (req, res) => {
     try {
         // --- KPI Calculation ---
 
-        // Total Revenue (Paid Invoices)
-        const paidInvoices = await prisma.invoice.findMany({ where: { status: 'paid' } });
-        const totalRevenue = paidInvoices.reduce((sum, i) => sum + parseFloat(i.amount), 0);
+        // Total Revenue (All Payments Received)
+        const allInvoices = await prisma.invoice.findMany({ where: { paidAmount: { gt: 0 } } });
+        const totalRevenue = allInvoices.reduce((sum, i) => sum + parseFloat(i.paidAmount), 0);
+
 
         // Occupancy Rate
         const totalUnits = await prisma.unit.count();
@@ -30,19 +31,25 @@ exports.getReports = async (req, res) => {
         // Active Leases
         const activeLeases = await prisma.lease.count({ where: { status: 'Active' } });
 
-        // Outstanding Dues (Invoices not paid)
-        const unpaidInvoices = await prisma.invoice.findMany({ where: { status: 'sent' } }); // Assuming 'sent' means pending
-        const outstandingDues = unpaidInvoices.reduce((sum, i) => sum + parseFloat(i.amount), 0);
+        // Outstanding Dues (Total Remaining Balance)
+        const unpaidInvoices = await prisma.invoice.findMany({
+            where: {
+                status: { notIn: ['paid', 'draft'] }
+            }
+        });
+        const outstandingDues = unpaidInvoices.reduce((sum, i) => sum + parseFloat(i.balanceDue), 0);
+
 
 
         // --- Graphs Data ---
 
-        // Monthly Revenue (Aggregate by month string)
+        // Monthly Revenue (Aggregate by month string using paidAmount)
         const monthlyMap = {};
-        paidInvoices.forEach(inv => {
+        allInvoices.forEach(inv => {
             if (!monthlyMap[inv.month]) monthlyMap[inv.month] = 0;
-            monthlyMap[inv.month] += parseFloat(inv.amount);
+            monthlyMap[inv.month] += parseFloat(inv.paidAmount);
         });
+
 
         // Lease Type Distribution
         // We need to fetch units to check bedrooms count for lease type heuristic
@@ -72,8 +79,9 @@ exports.getReports = async (req, res) => {
 
         const propertyPerformance = properties.map(p => {
             const revenue = p.units.reduce((rSum, u) => {
-                return rSum + u.invoices.reduce((iSum, i) => iSum + parseFloat(i.amount), 0);
+                return rSum + u.invoices.reduce((iSum, i) => iSum + parseFloat(i.paidAmount), 0);
             }, 0);
+
             const pTotalUnits = p.units.length;
             const pOccupied = p.units.filter(u => u.status !== 'Vacant').length;
             const pOccupancy = pTotalUnits > 0 ? Math.round((pOccupied / pTotalUnits) * 100) : 0;

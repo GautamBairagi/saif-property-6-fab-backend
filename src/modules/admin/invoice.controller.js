@@ -80,7 +80,10 @@ exports.getInvoices = async (req, res) => {
                 rent: currentRent,
                 serviceFees: parseFloat(inv.serviceFees),
                 amount: currentAmount,
+                paidAmount: parseFloat(inv.paidAmount || 0),
+                balanceDue: parseFloat(inv.balanceDue || 0),
                 status: inv.status,
+
                 category: inv.category,
                 description: inv.description,
                 leaseStartDate: activeLease?.startDate || null,
@@ -165,7 +168,8 @@ exports.createInvoice = async (req, res) => {
                 balanceDue: totalAmount,
                 status: 'draft',
                 category: req.body.category || 'RENT',
-                description: req.body.description || null
+                description: req.body.description || null,
+                dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
             },
             include: {
                 tenant: true,
@@ -406,9 +410,39 @@ exports.runBatchInvoicing = async (req, res) => {
 // DELETE /api/admin/invoices/:id
 exports.deleteInvoice = async (req, res) => {
     try {
-        await prisma.invoice.delete({ where: { id: parseInt(req.params.id) } });
-        res.json({ message: 'Deleted' });
+        const id = parseInt(req.params.id);
+
+        await prisma.$transaction(async (tx) => {
+            // 1. Delete associated Transactions
+            await tx.transaction.deleteMany({
+                where: { invoiceId: id }
+            });
+
+            // 2. Delete associated Payments (and their transactions if any)
+            const payments = await tx.payment.findMany({ where: { invoiceId: id } });
+            for (const payment of payments) {
+                await tx.transaction.deleteMany({ where: { paymentId: payment.id } });
+            }
+            await tx.payment.deleteMany({
+                where: { invoiceId: id }
+            });
+
+            // 3. Nullify Document associations (don't delete files, just remove the link)
+            await tx.document.updateMany({
+                where: { invoiceId: id },
+                data: { invoiceId: null }
+            });
+
+            // 4. Finally delete the Invoice
+            await tx.invoice.delete({
+                where: { id }
+            });
+        });
+
+        res.json({ message: 'Deleted successfully' });
     } catch (e) {
-        res.status(500).json({ message: 'Error deleting' });
+        console.error('Delete Invoice Error:', e);
+        res.status(500).json({ message: 'Error deleting invoice: ' + (e.message || 'Internal Server Error') });
     }
 };
+

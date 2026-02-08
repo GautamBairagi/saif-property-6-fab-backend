@@ -109,8 +109,8 @@ exports.getAllTenants = async (req, res) => {
             return {
                 id: t.id,
                 name: displayName,
-                firstName: t.firstName,
-                lastName: t.lastName,
+                firstName: t.firstName || (t.name ? t.name.split(' ')[0] : ''),
+                lastName: t.lastName || (t.name ? t.name.split(' ').slice(1).join(' ') : ''),
                 type: t.type || 'Individual',
                 companyName: t.companyName,
                 email: t.email,

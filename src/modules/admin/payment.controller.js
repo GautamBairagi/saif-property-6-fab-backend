@@ -51,26 +51,34 @@ exports.getOutstandingDues = async (req, res) => {
             const diffTime = now - dueDate;
             const daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-            // Determine status dynamically based on date if not already 'paid'
-            // If API status is 'draft', we might want to show it as 'Pending' or 'Overdue'
-            let status = 'Pending';
-            if (daysOverdue > 0) {
-                status = 'Overdue';
+            const totalAmount = parseFloat(due.amount || 0);
+            const paidAmt = parseFloat(due.paidAmount || 0);
+            const balanceDue = totalAmount - paidAmt;
+
+            // Determine status dynamically
+            let displayStatus = 'Pending';
+            if (due.status === 'partial') {
+                displayStatus = 'Partial';
+            } else if (daysOverdue > 0) {
+                displayStatus = 'Overdue';
             }
 
             return {
-                id: due.id, // For selecting
+                id: due.id,
                 invoice: due.invoiceNo,
-                tenant: due.tenant.name,
-                unit: due.unit.name,
-                leaseType: due.unit.rentalMode === 'FULL_UNIT' ? 'Full Unit' : 'Bedroom',
-                amount: parseFloat(due.amount),
+                tenant: due.tenant?.name || 'Unknown Tenant',
+                unit: due.unit?.name || 'Unknown Unit',
+                leaseType: due.unit?.rentalMode === 'FULL_UNIT' ? 'Full Unit' : (due.unit?.rentalMode === 'BEDROOM_WISE' ? 'Bedroom' : 'N/A'),
+                amount: balanceDue, // This is what the UI shows as "Due"
+                totalAmount: totalAmount,
+                paidAmount: paidAmt,
                 dueDate: dueDate.toLocaleDateString('en-GB', {
                     day: '2-digit', month: 'short', year: 'numeric'
                 }),
                 daysOverdue: daysOverdue > 0 ? daysOverdue : 0,
-                status: status
+                status: displayStatus
             };
+
         });
 
         res.json(formattedDues);
