@@ -69,6 +69,10 @@ exports.getInvoices = async (req, res) => {
             // Find active lease to get dates for UI
             const activeLease = inv.tenant.leases.find(l => l.status === 'Active' || l.status === 'DRAFT');
 
+            const displayCategory = inv.category === 'SERVICE' && inv.description === 'Security Deposit'
+                ? 'DEPOSIT'
+                : inv.category;
+
             return {
                 id: inv.id,
                 invoiceNo: inv.invoiceNo,
@@ -84,7 +88,7 @@ exports.getInvoices = async (req, res) => {
                 balanceDue: parseFloat(inv.balanceDue || 0),
                 status: inv.status,
 
-                category: inv.category,
+                category: displayCategory,
                 description: inv.description,
                 leaseStartDate: activeLease?.startDate || null,
                 leaseEndDate: activeLease?.endDate || null
